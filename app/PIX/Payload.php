@@ -35,49 +35,99 @@ class Payload{
     //DEFINIÇÂO DE VALORES
     public function setPixKey($pixKey)
     {
-        $this->$pixKey = $pixKey;
+        $this->pixKey = $pixKey;
         return $this;
     }
     public function setDescription($description)
     {
-        $this->$description = $description;
+        $this->description = $description;
         return $this;
     }
     public function setMerchantName($merchantName)
     {
-        $this->$merchantName = $merchantName;
+        $this->merchantName = $merchantName;
         return $this;
     }
     public function setMerchantCity($merchantCity)
     {
-        $this->$merchantCity = $merchantCity;
+        $this->merchantCity = $merchantCity;
         return $this;
     }
     public function setTxId($txId)
     {
-        $this->$txId = $txId;
+        $this->txId = $txId;
         return $this;
     }
     public function setAmount($amount)
     {
-        $this->$amount = number_format($amount,2,'.','');
+        $this->amount = number_format($amount,2,'.','');
         return $this;
+    }
+
+    //PEGAR OS DADOS PARA PAGAMENTO
+    private function getMerchantAcount()
+    {
+        //DOMINIO DO BANCO
+        $gui = $this->getValue(self::ID_MERCHANT_ACCOUNT_INFORMATION_GUI,'br.gov.bcb.pix');
+
+        //CHAVE PIX
+        $key = $this->getValue(self::ID_MERCHANT_ACCOUNT_INFORMATION_KEY, $this->pixKey);
+
+        //DESCRIÇÂO DE PAGAMENTO
+        $description = strlen($this->description) ? $this->getValue(self::ID_MERCHANT_ACCOUNT_INFORMATION_DESCRIPTION, $this->description) : '';
+
+        //VALOR CONPLETO DA CONTA
+        return $this->getValue(self::ID_MERCHANT_ACCOUNT_INFORMATION,$gui.$key.$description);
     }
 
     //RETORNA O VALOR COMPLETO E CALCULA O TAMANHO DA STRING
     public function getValue($id, $value)
     {
-        echo "<pre>";
-        print_r($size = srt_pad(strlen($value),2,'0',STR_PAD_LEFT));
-        echo "<pre>";exit;
+        $size = str_pad(strlen($value),2,'0',STR_PAD_LEFT);
+        
+        return $id.$size.$value;
+    }
+
+    //CALCULAR O VALOR DA HASH DE VALIDAÇÃO DO CÓDIGO PIX
+    private function getCRC16($payload) {
+        //ADICIONA DADOS GERAIS NO PAYLOAD
+        $payload .= self::ID_CRC16.'04';
+  
+        //DADOS DEFINIDOS PELO BACEN
+        $polinomio = 0x1021;
+        $resultado = 0xFFFF;
+  
+        //CHECKSUM
+        if (($length = strlen($payload)) > 0) {
+            for ($offset = 0; $offset < $length; $offset++) {
+                $resultado ^= (ord($payload[$offset]) << 8);
+                for ($bitwise = 0; $bitwise < 8; $bitwise++) {
+                    if (($resultado <<= 1) & 0x10000) $resultado ^= $polinomio;
+                    $resultado &= 0xFFFF;
+                }
+            }
+        }
+  
+        //RETORNA CÓDIGO CRC16 DE 4 CARACTERES
+        return self::ID_CRC16.'04'.strtoupper(dechex($resultado));
     }
 
     //GERADOR DE CÓDIGO COMPLETO DO PIX
-    public function generationCode()
+    public function getPayload()
     {
-       $payload = $his->getValue(self::ID_PAYLOAD_FORMAT_INDICATOR,'01');
-       return $payload;
+        //CRIAR PAYLOAD
+       $payload = $this->getValue(self::ID_PAYLOAD_FORMAT_INDICATOR,'01').
+       $this->getMerchantAcount().
+       $this->getValue(self::ID_MERCHANT_CATEGORY_CODE,'0000').
+       $this->getValue(self::ID_TRANSACTION_CURRENCY,'986').
+       $this->getValue(self::ID_TRANSACTION_AMOUNT, $this->amount).
+       $this->getValue(self::ID_COUNTRY_CODE, 'BR').
+       $this->getValue(self::ID_MERCHANT_NAME, $this->merchantName).
+       $this->getValue(self::ID_MERCHANT_CITY, $this->merchantCity).
+       $this->getValue(self::ID_ADDITIONAL_DATA_FIELD_TEMPLATE,$this->getValue(self::ID_ADDITIONAL_DATA_FIELD_TEMPLATE_TXID, $this->txId));
+
+       //RETORNA PAYLOAD + CRC16
+       return $payload.$this->getCRC16($payload);
     }
     
-
 }
